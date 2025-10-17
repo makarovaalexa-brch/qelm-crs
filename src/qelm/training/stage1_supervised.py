@@ -1,7 +1,7 @@
 """
 Stage 1: Supervised Pretraining
 
-Train RL actor to predict Word2Vec embeddings from conversation context.
+Train RL actor to predict SentenceBERT embeddings from conversation context.
 
 Goal: Learn the mapping from conversation context → relevant concept embeddings
 BEFORE reward-based RL training.
@@ -23,7 +23,7 @@ import openai
 import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
-from models.embedding_qelm import Word2VecEmbeddingSpace, EmbeddingActorCritic
+from models.embedding_qelm import SentenceBERTEmbeddingSpace, EmbeddingActorCritic
 
 
 class ConceptExtractor:
@@ -105,11 +105,11 @@ class Stage1Dataset:
     def __init__(
         self,
         reddit_data_path: str,
-        word2vec_space: Word2VecEmbeddingSpace,
+        embedding_space: SentenceBERTEmbeddingSpace,
         concept_extractor: ConceptExtractor,
         encoder: SentenceTransformer
     ):
-        self.word2vec_space = word2vec_space
+        self.embedding_space = embedding_space
         self.concept_extractor = concept_extractor
         self.encoder = encoder
 
@@ -200,12 +200,12 @@ class Stage1Dataset:
             if not concepts:
                 continue
 
-            # Get Word2Vec embeddings for concepts
+            # Get SentenceBERT embeddings for concepts
             concept_embeddings = []
             valid_concepts = []
 
             for concept in concepts:
-                emb = self.word2vec_space.get_embedding(concept)
+                emb = self.embedding_space.get_embedding(concept)
                 if emb is not None:
                     concept_embeddings.append(emb)
                     valid_concepts.append(concept)
@@ -242,19 +242,19 @@ class Stage1Trainer:
     def __init__(
         self,
         rl_agent: EmbeddingActorCritic,
-        word2vec_space: Word2VecEmbeddingSpace,
+        embedding_space: SentenceBERTEmbeddingSpace,
         reddit_data_path: str,
         encoder: SentenceTransformer
     ):
         self.rl_agent = rl_agent
-        self.word2vec_space = word2vec_space
+        self.embedding_space = embedding_space
         self.encoder = encoder
 
         # Create dataset
         concept_extractor = ConceptExtractor()
         self.dataset = Stage1Dataset(
             reddit_data_path,
-            word2vec_space,
+            embedding_space,
             concept_extractor,
             encoder
         )
@@ -373,7 +373,7 @@ class Stage1Trainer:
             predicted_embedding = self.rl_agent.predict_embedding(state, explore=False)
 
             # Find nearest concepts
-            nearest = self.word2vec_space.find_nearest_entities(predicted_embedding, top_k=5)
+            nearest = self.embedding_space.find_nearest_entities(predicted_embedding, top_k=5)
 
             print(f"Context: {example['context'][:100]}...")
             print(f"Target concepts: {example['concepts']}")
@@ -408,13 +408,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Initialize components
-    print("Initializing Word2Vec embedding space...")
-    word2vec_space = Word2VecEmbeddingSpace(movielens_data_path=args.movielens_data)
+    print("Initializing SentenceBERT embedding space...")
+    embedding_space = SentenceBERTEmbeddingSpace(movielens_data_path=args.movielens_data)
 
     print("Initializing RL actor...")
     rl_agent = EmbeddingActorCritic(
         state_dim=384,  # SentenceBERT
-        embedding_dim=300  # Word2Vec
+        embedding_dim=384  # SentenceBERT
     )
 
     print("Initializing encoder...")
@@ -423,7 +423,7 @@ if __name__ == "__main__":
     # Create trainer
     trainer = Stage1Trainer(
         rl_agent=rl_agent,
-        word2vec_space=word2vec_space,
+        embedding_space=embedding_space,
         reddit_data_path=args.reddit_data,
         encoder=encoder
     )
