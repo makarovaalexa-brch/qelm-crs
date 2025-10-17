@@ -55,7 +55,6 @@ data/movielens/
 # Model checkpoints and logs
 experiments/checkpoints/
 experiments/logs/
-models/
 checkpoints/
 *.pt
 *.pth
