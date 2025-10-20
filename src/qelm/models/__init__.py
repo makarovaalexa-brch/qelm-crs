@@ -2,18 +2,35 @@
 Neural network models for QELM-CRS system.
 
 Includes:
-- RL policy networks (PPO/SAC)
-- Conversation state encoders
-- Question embedding models
-- Value functions
+- RL actor-critic for continuous embedding prediction
+- Two-tower recommender system
+- SentenceBERT embedding space
 """
 
-from .policy_network import QuestionPolicyNetwork
-from .state_encoder import ConversationStateEncoder
-from .embedding_decoder import EmbeddingSemanticMapper
+from .embedding_qelm import (
+    SentenceBERTEmbeddingSpace,
+    EmbeddingActorCritic,
+    QuestionGenerator,
+    EmbeddingQLEM
+)
+from .two_tower_recommender import (
+    TwoTowerRecommender,
+    MovieCatalog,
+    RecommenderTrainer,
+    UserTower,
+    ItemTower
+)
 
 __all__ = [
-    "QuestionPolicyNetwork",
-    "ConversationStateEncoder",
-    "EmbeddingSemanticMapper"
+    # Embedding QELM
+    "SentenceBERTEmbeddingSpace",
+    "EmbeddingActorCritic",
+    "QuestionGenerator",
+    "EmbeddingQLEM",
+    # Two-Tower Recommender
+    "TwoTowerRecommender",
+    "MovieCatalog",
+    "RecommenderTrainer",
+    "UserTower",
+    "ItemTower"
 ]
