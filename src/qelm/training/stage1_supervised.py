@@ -175,28 +175,42 @@ class Stage1Dataset:
 
     def _create_training_examples(self) -> List[Dict]:
         """
-        Convert Reddit posts to training examples.
+        Convert Reddit conversation pairs to training examples.
 
-        Each example: {
-            "context": "User wants movies like Inception",
-            "concepts": ["Inception", "sci-fi", "Nolan"],
-            "target_embedding": average of concept embeddings
-        }
+        NEW FORMAT (conversation pairs):
+        Input: User post ("I love Inception")
+        Target: Concepts from RESPONSE ("Have you seen Interstellar?")
+        → ["Interstellar", "Nolan", "sci-fi"]
+
+        This teaches: User preference → What to ask NEXT
         """
         examples = []
 
-        for post in tqdm(self.data, desc="Processing Reddit posts"):
-            # Get post text
-            text = post.get("title", "") + " " + post.get("text", "")
+        for post in tqdm(self.data, desc="Processing Reddit conversations"):
+            # NEW: Handle conversation pair format
+            if "user_post" in post and "response" in post:
+                # Input context = user's statement
+                context = post["user_post"]
 
-            if not text.strip():
-                continue
+                # Target concepts = from the RESPONSE (what to ask next)
+                if "response_concepts" in post:
+                    concepts = post["response_concepts"]
+                else:
+                    # Extract concepts from the response
+                    concepts = self.concept_extractor.extract_concepts(post["response"])
 
-            # Extract concepts (use provided or extract with GPT)
-            if "concepts" in post:
-                concepts = post["concepts"]
+            # LEGACY: Old format (single posts) - for backwards compatibility
             else:
-                concepts = self.concept_extractor.extract_concepts(text)
+                text = post.get("title", "") + " " + post.get("text", "")
+                context = text
+
+                if "concepts" in post:
+                    concepts = post["concepts"]
+                else:
+                    concepts = self.concept_extractor.extract_concepts(context)
+
+            if not context.strip():
+                continue
 
             if not concepts:
                 continue
@@ -219,7 +233,7 @@ class Stage1Dataset:
 
             # Create training example
             examples.append({
-                "context": text[:500],  # Truncate long posts
+                "context": context[:500],  # Truncate long posts
                 "concepts": valid_concepts,
                 "target_embedding": target_embedding
             })

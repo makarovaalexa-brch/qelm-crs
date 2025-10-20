@@ -1,8 +1,17 @@
 """
 Reddit conversation data scraper.
 
-Scrapes question-asking conversations from movie-related subreddits.
-Collects data for Stage 1 supervised training.
+Scrapes conversation pairs from movie-related subreddits for Stage 1 training.
+
+KEY DESIGN:
+- Scrapes USER POST + RESPONSE pairs (not just posts)
+- Extracts concepts from the RESPONSE (what to ask next)
+- Trains model: User preference → What concepts to explore
+
+Example:
+    User: "I love Inception"
+    Response: "Have you seen other Nolan films like Interstellar?"
+    → Concepts: ["Nolan", "Interstellar", "director"]
 
 Subreddits:
 - r/MovieSuggestions
@@ -159,15 +168,95 @@ class RedditScraper:
 
         return []
 
+    def scrape_conversation_pairs(
+        self,
+        subreddit: str,
+        max_pairs: int = 100
+    ) -> List[Dict]:
+        """
+        Scrape conversation pairs: user post + helpful response.
+
+        Args:
+            subreddit: Subreddit name
+            max_pairs: Maximum conversation pairs to collect
+
+        Returns:
+            List of conversation pairs with structure:
+            {
+                "user_post": "I love Inception",
+                "response": "Have you seen Interstellar?",
+                "response_concepts": ["Interstellar", "Nolan", "sci-fi"]
+            }
+        """
+        print(f"Scraping conversation pairs from r/{subreddit}...")
+
+        # First get posts
+        posts = self.scrape_subreddit_questions(subreddit, max_posts=max_pairs * 2)
+
+        conversation_pairs = []
+
+        for post in posts:
+            if len(conversation_pairs) >= max_pairs:
+                break
+
+            # Get comments for this post
+            comments = self.get_post_comments(post["id"], subreddit)
+
+            if not comments:
+                continue
+
+            # Find good responses (non-bot, substantive, upvoted)
+            good_responses = []
+            for comment in comments:
+                body = comment.get("body", "")
+                score = comment.get("score", 0)
+                author = comment.get("author", "")
+
+                # Filter criteria
+                if (
+                    len(body) > 50 and  # Substantive response
+                    score >= 1 and  # At least 1 upvote
+                    author != "AutoModerator" and
+                    "[deleted]" not in body and
+                    "[removed]" not in body
+                ):
+                    good_responses.append({
+                        "body": body,
+                        "score": score
+                    })
+
+            if not good_responses:
+                continue
+
+            # Take top-scored response
+            best_response = max(good_responses, key=lambda x: x["score"])
+
+            # Create conversation pair
+            user_text = post["title"] + " " + post.get("text", "")
+
+            conversation_pairs.append({
+                "id": post["id"],
+                "user_post": user_text.strip(),
+                "response": best_response["body"],
+                "subreddit": subreddit,
+                "post_url": post.get("url", "")
+            })
+
+            # Rate limiting
+            time.sleep(0.5)
+
+        print(f"Collected {len(conversation_pairs)} conversation pairs")
+        return conversation_pairs
+
     def scrape_movie_subreddits(
         self,
         max_posts_per_subreddit: int = 100
     ) -> Dict[str, List[Dict]]:
         """
-        Scrape multiple movie-related subreddits.
+        Scrape multiple movie-related subreddits for conversation pairs.
 
         Returns:
-            Dictionary mapping subreddit name to list of posts
+            Dictionary mapping subreddit name to list of conversation pairs
         """
         subreddits = [
             "MovieSuggestions",
@@ -180,16 +269,16 @@ class RedditScraper:
         all_data = {}
 
         for subreddit in subreddits:
-            posts = self.scrape_subreddit_questions(
+            pairs = self.scrape_conversation_pairs(
                 subreddit,
-                max_posts=max_posts_per_subreddit
+                max_pairs=max_posts_per_subreddit
             )
-            all_data[subreddit] = posts
+            all_data[subreddit] = pairs
 
             # Save intermediate results
-            self.save_data(posts, f"{subreddit}_questions.json")
+            self.save_data(pairs, f"{subreddit}_conversations.json")
 
-            print(f"Completed r/{subreddit}: {len(posts)} posts")
+            print(f"Completed r/{subreddit}: {len(pairs)} conversation pairs")
             time.sleep(2)  # Be nice to the API
 
         return all_data
@@ -217,49 +306,50 @@ class RedditScraper:
 
 def create_sample_reddit_data():
     """
-    Create sample Reddit-style data for development.
+    Create sample conversation pairs for development.
 
-    Use when API is unavailable or for testing.
+    Each pair shows: User preference → Follow-up question/suggestion
+    Concepts are extracted from the RESPONSE (what to ask next).
     """
-    sample_posts = [
+    sample_conversations = [
         {
             "id": "sample1",
-            "title": "Looking for movies like Inception",
-            "text": "I loved Inception's mind-bending plot and great cinematography. Any recommendations for similar movies?",
-            "concepts": ["Inception", "mind-bending", "cinematography", "sci-fi"],
+            "user_post": "I loved Inception's mind-bending plot and great cinematography.",
+            "response": "Since you enjoyed Inception, have you seen other Christopher Nolan films like Interstellar or The Prestige? They have similar themes of complex narratives.",
+            "response_concepts": ["Christopher Nolan", "Interstellar", "The Prestige", "director", "complex narratives"],
             "subreddit": "MovieSuggestions"
         },
         {
             "id": "sample2",
-            "title": "Best Tarantino films?",
-            "text": "I've seen Pulp Fiction and loved it. What other Tarantino movies should I watch?",
-            "concepts": ["Tarantino", "Pulp Fiction", "crime", "dialogue"],
+            "user_post": "I've seen Pulp Fiction and loved it. What other Tarantino movies should I watch?",
+            "response": "If you loved Pulp Fiction, definitely check out Reservoir Dogs and Kill Bill. Both have Tarantino's signature style with great dialogue and non-linear storytelling.",
+            "response_concepts": ["Reservoir Dogs", "Kill Bill", "non-linear storytelling", "dialogue", "Tarantino style"],
             "subreddit": "movies"
         },
         {
             "id": "sample3",
-            "title": "Dark psychological thrillers",
-            "text": "I'm in the mood for something dark and psychological. Think Shutter Island or Black Swan.",
-            "concepts": ["psychological", "thriller", "dark", "Shutter Island", "Black Swan"],
+            "user_post": "I'm in the mood for something dark and psychological. Think Shutter Island or Black Swan.",
+            "response": "Based on your taste, I'd recommend Requiem for a Dream or The Machinist. Both are intense psychological dramas with similar dark atmosphere.",
+            "response_concepts": ["Requiem for a Dream", "The Machinist", "psychological drama", "dark atmosphere", "intense"],
             "subreddit": "MovieSuggestions"
         },
         {
             "id": "sample4",
-            "title": "Movies with great soundtracks",
-            "text": "Looking for films where the music really enhances the experience. I loved Interstellar's score.",
-            "concepts": ["soundtrack", "music", "Interstellar", "score"],
+            "user_post": "Looking for films where the music really enhances the experience. I loved Interstellar's score.",
+            "response": "Hans Zimmer did the score for Interstellar. You might enjoy other Zimmer soundtracks like Dune, Blade Runner 2049, or The Dark Knight trilogy.",
+            "response_concepts": ["Hans Zimmer", "Dune", "Blade Runner 2049", "The Dark Knight", "composer", "soundtrack"],
             "subreddit": "TrueFilm"
         },
         {
             "id": "sample5",
-            "title": "Feel-good comedies for weekend",
-            "text": "Need something light and funny after a rough week. Preferably not too stupid.",
-            "concepts": ["comedy", "feel-good", "light-hearted", "funny"],
+            "user_post": "Need something light and funny after a rough week. Preferably not too stupid.",
+            "response": "For smart comedies, try The Grand Budapest Hotel or Knives Out. Both are clever, funny, and beautifully crafted films.",
+            "response_concepts": ["The Grand Budapest Hotel", "Knives Out", "clever comedy", "smart humor", "well-crafted"],
             "subreddit": "MovieSuggestions"
         }
     ]
 
-    return sample_posts
+    return sample_conversations
 
 
 # CLI interface
@@ -290,10 +380,10 @@ if __name__ == "__main__":
     scraper = RedditScraper(output_dir=args.output_dir)
 
     if args.sample:
-        print("Creating sample Reddit data...")
+        print("Creating sample conversation pairs...")
         sample_data = create_sample_reddit_data()
-        scraper.save_data(sample_data, "sample_questions.json")
-        print(f"Created {len(sample_data)} sample posts")
+        scraper.save_data(sample_data, "sample_conversations.json")
+        print(f"Created {len(sample_data)} sample conversation pairs")
     else:
         print("Scraping Reddit movie subreddits...")
         all_data = scraper.scrape_movie_subreddits(
