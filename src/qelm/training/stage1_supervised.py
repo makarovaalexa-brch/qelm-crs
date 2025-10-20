@@ -13,6 +13,7 @@ Loss: MSE between predicted embedding and target concept embeddings
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import List, Dict, Optional
 from pathlib import Path
 import json
