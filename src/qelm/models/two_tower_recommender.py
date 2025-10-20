@@ -209,6 +209,14 @@ class MovieCatalog:
         """Load MovieLens movies."""
         if data_path:
             try:
+                # Try filtered dataset first (subset of top movies)
+                movies_path = Path(data_path) / "movies_filtered.csv"
+                if movies_path.exists():
+                    movies = pd.read_csv(movies_path)
+                    print(f"Using filtered dataset: {len(movies)} movies")
+                    return movies
+
+                # Fall back to full dataset
                 movies_path = Path(data_path) / "movies.csv"
                 if movies_path.exists():
                     movies = pd.read_csv(movies_path)
